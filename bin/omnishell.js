@@ -25,6 +25,39 @@ function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
+function getAllPm2Apps() {
+  const allApps = [];
+  const seenKeys = new Set();
+  const pm2Homes = ['/root/.pm2'];
+  try {
+    if (fs.existsSync('/home')) {
+      const users = fs.readdirSync('/home');
+      for (const u of users) {
+        const p = `/home/${u}/.pm2`;
+        if (fs.existsSync(p)) pm2Homes.push(p);
+      }
+    }
+  } catch (e) {}
+
+  for (const home of pm2Homes) {
+    try {
+      const raw = execSync(`PM2_HOME="${home}" pm2 jlist 2>/dev/null`, { encoding: 'utf8' }).trim();
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        const list = JSON.parse(raw);
+        for (const app of list) {
+          const key = `${app.name}:${app.pm_id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            app.__pm2Home = home;
+            allApps.push(app);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  return allApps;
+}
+
 const args = process.argv.slice(2);
 const command = args[0];
 
@@ -43,15 +76,16 @@ Available Commands:
   user <new_username>     Change admin username
   title <new_title>       Update terminal title and browser branding
   status                  Show OmniShell gateway health, ports, and URL
-  restart [app]           Restart OmniShell or any running application
+  restart [app]           Restart OmniShell or any target application
   help                    Show this help guide
 
 Log Streaming Examples:
   omnishell logs              Stream logs from all PM2 applications
-  omnishell logs api          Stream logs from any app matching "api"
+  omnishell logs lgbs         Stream logs from lgbs-api cluster
+  omnishell logs tronpay      Stream logs from tronpay-api cluster
   omnishell logs redis        Stream systemd journal for redis-server
   omnishell logs nginx        Stream systemd journal for nginx
-  omnishell logs api 100      Stream last 100 lines and follow
+  omnishell logs api 100      Stream last 100 lines and follow live
 `);
 }
 
@@ -68,52 +102,46 @@ switch (command) {
     console.log('  OmniShell Application Fleet Status');
     console.log('======================================================');
 
-    // 1. Dynamic PM2 Applications
-    try {
-      const pm2Raw = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' });
-      const pm2List = JSON.parse(pm2Raw);
-
-      if (pm2List.length === 0) {
-        console.log('  PM2 Applications : None running');
-      } else {
-        // Group by app name to calculate clusters
-        const groups = {};
-        for (const app of pm2List) {
-          const name = app.name;
-          if (!groups[name]) {
-            groups[name] = { count: 0, status: app.pm2_env.status, mem: 0, cpu: 0, mode: app.pm2_env.exec_mode };
-          }
-          groups[name].count += 1;
-          groups[name].mem += (app.monit ? app.monit.memory : 0);
-          groups[name].cpu += (app.monit ? app.monit.cpu : 0);
-          if (app.pm2_env.status !== 'online') groups[name].status = app.pm2_env.status;
+    // 1. Dynamic PM2 Applications across users
+    const pm2List = getAllPm2Apps();
+    if (pm2List.length === 0) {
+      console.log('  PM2 Applications : None running');
+    } else {
+      const groups = {};
+      for (const app of pm2List) {
+        const name = app.name;
+        if (!groups[name]) {
+          groups[name] = { count: 0, status: app.pm2_env ? app.pm2_env.status : 'online', mem: 0, cpu: 0, mode: app.pm2_env ? app.pm2_env.exec_mode : 'fork' };
         }
-
-        console.log('  PM2 Applications:');
-        for (const [name, info] of Object.entries(groups)) {
-          const memMb = Math.round(info.mem / 1024 / 1024);
-          const typeStr = info.count > 1 ? `${info.count} cluster instances` : `${info.mode || 'fork'}`;
-          const badge = info.status === 'online' ? '[ONLINE]' : `[${info.status.toUpperCase()}]`;
-          console.log(`    ${badge.padEnd(9)} ${name.padEnd(20)} : ${typeStr.padEnd(22)} (RAM: ${memMb} MB, CPU: ${info.cpu}%)`);
-        }
+        groups[name].count += 1;
+        groups[name].mem += (app.monit ? app.monit.memory : 0);
+        groups[name].cpu += (app.monit ? app.monit.cpu : 0);
+        if (app.pm2_env && app.pm2_env.status !== 'online') groups[name].status = app.pm2_env.status;
       }
-    } catch (e) {
-      console.log('  PM2 Applications : PM2 daemon not running');
+
+      console.log('  PM2 Applications:');
+      for (const [name, info] of Object.entries(groups)) {
+        const memMb = Math.round(info.mem / 1024 / 1024);
+        const typeStr = info.count > 1 ? `${info.count} cluster instances` : `${info.mode || 'fork'}`;
+        const badge = info.status === 'online' ? '[ONLINE]' : `[${info.status.toUpperCase()}]`;
+        console.log(`    ${badge.padEnd(9)} ${name.padEnd(20)} : ${typeStr.padEnd(22)} (RAM: ${memMb} MB, CPU: ${info.cpu}%)`);
+      }
     }
 
     // 2. Dynamic Infrastructure & System Services
     console.log('------------------------------------------------------');
     console.log('  System Services:');
     const systemServices = ['nginx', 'redis-server', 'redis', 'mongod', 'mongodb', 'docker', 'postgresql', 'mysql', 'ttyd'];
+    const seenSvc = new Set();
     for (const s of systemServices) {
+      if (seenSvc.has(s)) continue;
       try {
         const state = execSync(`systemctl is-active ${s} 2>/dev/null`, { encoding: 'utf8' }).trim();
         if (state === 'active') {
+          seenSvc.add(s);
           console.log(`    [ACTIVE]  ${s.padEnd(20)} : systemd service`);
         }
-      } catch (e) {
-        // Service not installed or inactive
-      }
+      } catch (e) {}
     }
     console.log('======================================================');
     break;
@@ -126,7 +154,16 @@ switch (command) {
     // Case A: No target or target is 'all' -> stream all PM2 logs
     if (!target || target === 'all') {
       console.log(`[+] Streaming logs for all PM2 applications (lines: ${lines})...`);
-      const child = spawn('pm2', ['logs', '--lines', lines.toString()], { stdio: 'inherit' });
+      const allApps = getAllPm2Apps();
+      const spawnEnv = { ...process.env };
+      const appWithHome = allApps.find(a => a.__pm2Home);
+      if (appWithHome) {
+        spawnEnv.PM2_HOME = appWithHome.__pm2Home;
+      }
+      const child = spawn('pm2', ['logs', '--lines', lines.toString()], {
+        stdio: 'inherit',
+        env: spawnEnv
+      });
       child.on('exit', code => process.exit(code || 0));
       break;
     }
@@ -141,24 +178,25 @@ switch (command) {
     }
 
     // Case C: Check PM2 apps for exact or fuzzy match
-    let matchedPm2Name = null;
-    try {
-      const pm2Raw = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' });
-      const pm2List = JSON.parse(pm2Raw);
-      const appNames = [...new Set(pm2List.map(a => a.name))];
+    const pm2List = getAllPm2Apps();
+    const appNames = [...new Set(pm2List.map(a => a.name))];
 
-      // Exact match first
-      matchedPm2Name = appNames.find(n => n.toLowerCase() === target.toLowerCase());
-
-      // Fuzzy / substring match
-      if (!matchedPm2Name) {
-        matchedPm2Name = appNames.find(n => n.toLowerCase().includes(target.toLowerCase()));
-      }
-    } catch (e) {}
+    let matchedPm2Name = appNames.find(n => n.toLowerCase() === target.toLowerCase());
+    if (!matchedPm2Name) {
+      matchedPm2Name = appNames.find(n => n.toLowerCase().includes(target.toLowerCase()));
+    }
 
     if (matchedPm2Name) {
       console.log(`[+] Found PM2 application: "${matchedPm2Name}". Streaming live logs...`);
-      const child = spawn('pm2', ['logs', matchedPm2Name, '--lines', lines.toString()], { stdio: 'inherit' });
+      const matchedApp = pm2List.find(a => a.name === matchedPm2Name);
+      const spawnEnv = { ...process.env };
+      if (matchedApp && matchedApp.__pm2Home) {
+        spawnEnv.PM2_HOME = matchedApp.__pm2Home;
+      }
+      const child = spawn('pm2', ['logs', matchedPm2Name, '--lines', lines.toString()], {
+        stdio: 'inherit',
+        env: spawnEnv
+      });
       child.on('exit', code => process.exit(code || 0));
       break;
     }
@@ -255,9 +293,7 @@ switch (command) {
     try {
       const ttydStatus = execSync('systemctl is-active ttyd 2>/dev/null', { encoding: 'utf8' }).trim();
       console.log(`  ttyd Daemon  : ${ttydStatus}`);
-    } catch (e) {
-      console.log('  ttyd Daemon  : inactive');
-    }
+    } catch (e) {}
     console.log('======================================================');
     break;
   }

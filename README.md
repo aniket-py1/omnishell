@@ -16,14 +16,30 @@ Designed and developed by **Aniket Mahida**.
 
 ## 1-Click Automated Installation
 
-Run this single command on any Ubuntu (20.04 / 22.04 / 24.04 LTS) or Debian (11 / 12) server:
+Deploy a complete, production-grade secure web terminal with SSL and real-time telemetry in under 60 seconds.
+
+### Prerequisites
+- Operating System: Ubuntu 20.04 / 22.04 / 24.04 LTS or Debian 11 / 12 (x86_64 or ARM64)
+- Access: Root or sudo privileges
+- DNS: A-record pointing your domain/subdomain to your server's public IP
+- Inbound Ports: 80 (HTTP) and 443 (HTTPS) open in your firewall or AWS Security Group
+
+### Method 1: Unattended 1-Line Setup (Recommended)
+Replace `panel.example.com`, `admin`, and `YourSecurePassword123` with your own credentials:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.sh | sudo bash -s -- --domain panel.example.com --user admin --pass YourSecurePassword123
 ```
 
+### Method 2: Interactive Wizard Mode
+Run without arguments and follow the interactive step-by-step terminal prompts:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.sh | sudo bash
+```
+
 ### What the 1-Click Installer Executes Automatically:
-1. Detects OS and installs prerequisites (`ttyd`, `nginx`, `certbot`, `python3-certbot-nginx`, `nodejs`, `pm2`).
+1. Detects OS and installs prerequisites (`ttyd`, `nginx`, `certbot`, `python3-certbot-nginx`, `nodejs 22 LTS`, `pm2`).
 2. Generates salted `scrypt` credentials in `/etc/omnishell/config.json`.
 3. Configures the internal `ttyd` pseudo-terminal daemon (loopback on port 7680).
 4. Launches the OmniShell security gateway and telemetry daemon under PM2.
@@ -31,32 +47,25 @@ curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.s
 6. Automatically requests and binds a Let's Encrypt SSL certificate for your domain.
 7. Installs the global management command `omnishell` to `/usr/local/bin/omnishell`.
 
-### Interactive Installation (Wizard Mode)
-If you omit the flags, the installer automatically starts an interactive wizard:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.sh | sudo bash
-```
-
 ---
 
-## Real-Time Server Telemetry HUD
+## Real-Time Server Telemetry HUD (All-Time Header)
 
-OmniShell embeds a permanent, non-intrusive live telemetry bar at the top of the terminal session inside your browser. It updates every 2,000 milliseconds via an asynchronous `/api/stats` endpoint:
+OmniShell embeds a permanent, non-intrusive live telemetry bar at the top of the terminal session inside your browser. It updates every 1,500 milliseconds via an asynchronous `/api/stats` endpoint without interrupting active terminal keystrokes:
 
 - **Host Telemetry**: System hostname, Linux distribution, and kernel version.
-- **Live CPU Usage**: Instantaneous CPU load percentage across all physical and virtual cores.
+- **Live CPU Usage**: Instantaneous CPU load average across all physical and virtual cores.
 - **Live Memory (RAM)**: Real-time RAM consumption with a visual dynamic threshold progress bar (Green < 70%, Yellow > 70%, Red > 85%).
-- **Live Storage (Disk)**: Root filesystem capacity and utilization percentage.
+- **Live Storage (Disk)**: Root filesystem capacity, used space, and utilization percentage.
 - **Server Uptime**: Days, hours, and minutes since last reboot.
-- **Active Fleet**: Live count of online PM2 cluster instances and background services.
+- **Active Fleet**: Live count of online PM2 cluster instances and background services across all system users (`root`, `ubuntu`).
 - **Quick Action Bar**: Dedicated buttons to trigger instant app status, view logs, or sign out.
 
 ---
 
 ## Application Fleet Monitoring & Universal Log Streaming
 
-OmniShell includes built-in dynamic service discovery. You can inspect all running applications and stream their live logs directly from the terminal without remembering process IDs or file paths.
+OmniShell includes built-in dynamic service discovery. You can inspect all running applications and stream their live logs directly from the terminal without remembering process IDs or log file paths.
 
 ### 1. View Running Application Fleet (`omnishell apps`)
 Run `omnishell apps` to get an instant real-time status of all Node.js/Python/Go PM2 clusters and system services:

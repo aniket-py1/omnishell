@@ -145,16 +145,47 @@ function getSystemStats() {
 
   let diskUsage = 'N/A';
   try {
-    const df = execSync("df -h / | tail -n 1 | awk '{print $5}'", { encoding: 'utf8' }).trim();
+    const df = execSync("df -h / 2>/dev/null | tail -n 1 | awk '{print $3 \"/\" $2 \" (\" $5 \")\"}'", { encoding: 'utf8' }).trim();
     if (df) diskUsage = df;
   } catch (e) {}
 
+  // Dynamic PM2 discovery across all users
   let pm2Online = 0;
+  let pm2Total = 0;
+  const appCounts = {};
+  const seenKeys = new Set();
+  const pm2Homes = ['/root/.pm2'];
   try {
-    const pm2Raw = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' });
-    const list = JSON.parse(pm2Raw);
-    pm2Online = list.filter(p => p.pm2_env && p.pm2_env.status === 'online').length;
+    if (fs.existsSync('/home')) {
+      const users = fs.readdirSync('/home');
+      for (const u of users) {
+        const p = `/home/${u}/.pm2`;
+        if (fs.existsSync(p)) pm2Homes.push(p);
+      }
+    }
   } catch (e) {}
+
+  for (const home of pm2Homes) {
+    try {
+      const raw = execSync(`PM2_HOME="${home}" pm2 jlist 2>/dev/null`, { encoding: 'utf8' }).trim();
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        const list = JSON.parse(raw);
+        for (const app of list) {
+          const key = `${app.name}:${app.pm_id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            pm2Total++;
+            if (app.pm2_env && app.pm2_env.status === 'online') {
+              pm2Online++;
+              appCounts[app.name] = (appCounts[app.name] || 0) + 1;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  const breakdown = Object.entries(appCounts).map(([name, count]) => `${name} (${count})`).join(', ');
 
   return {
     hostname: os.hostname(),
@@ -165,7 +196,9 @@ function getSystemStats() {
     ramPercent,
     diskUsage,
     uptime: uptimeStr,
-    pm2Online
+    pm2Online,
+    pm2Total,
+    breakdown: breakdown || 'No active apps'
   };
 }
 

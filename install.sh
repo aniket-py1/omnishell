@@ -85,7 +85,7 @@ apt-get install -y ttyd nginx certbot python3-certbot-nginx curl net-tools
 
 # Ensure Node.js and PM2 are installed
 if ! command -v node &>/dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
 fi
 
@@ -239,8 +239,10 @@ echo "  Shell User   : $SHELL_USER"
 echo "  CLI Tool     : omnishell --help"
 echo "------------------------------------------------------"
 echo "  Management Commands:"
+echo "    omnishell apps                  Inspect all running apps & services"
+echo "    omnishell logs [app]            Stream real-time live application logs"
 echo "    omnishell password <new_pass>   Change admin password"
 echo "    omnishell user <new_user>       Change admin username"
-echo "    omnishell status                View service health"
+echo "    omnishell status                View service health & telemetry"
 echo "    omnishell restart               Restart services"
 echo "======================================================"
