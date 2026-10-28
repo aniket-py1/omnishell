@@ -8,7 +8,7 @@
 [![Memory: < 20MB](https://img.shields.io/badge/RAM-~18%20MB-success.svg)](https://github.com/aniket-py1/omnishell)
 
 A lightweight, zero-dependency web terminal gateway for Linux servers.
-Provides secure, encrypted browser-based terminal access via HTTPS and WebSockets with dynamic authentication, salted password hashing, brute-force protection, and CLI management.
+Provides secure, encrypted browser-based terminal access via HTTPS and WebSockets with dynamic authentication, salted password hashing, brute-force protection, and universal CLI management.
 
 Designed and developed by **Aniket Mahida**.
 
@@ -22,6 +22,7 @@ OmniShell couples the high-performance C binary `ttyd` (libwebsockets + xterm.js
 
 - High Performance: Native C pseudo-terminal emulation with xterm.js frontend.
 - Zero Control Panel Bloat: Operates cleanly on native systemd, PM2, and Nginx without heavy web panels.
+- Universal Application Auto-Discovery: Dynamically discovers, monitors, and streams live logs for any running PM2 app or systemd service without hardcoding.
 - Enterprise Security:
   - TLS 1.3 encryption on standard HTTPS port 443 via Let's Encrypt.
   - Salted password hashing utilizing Node.js native `scrypt` algorithm.
@@ -30,7 +31,7 @@ OmniShell couples the high-performance C binary `ttyd` (libwebsockets + xterm.js
   - Internal terminal socket bound strictly to `127.0.0.1` (no exposed high ports).
 - Session Persistence: Nginx proxy timeouts configured to 86,400 seconds (24 hours) to prevent disconnection during long-running tasks.
 - Mobile Touch Support: Fully functional on-screen keyboard support for Safari and Chrome on iOS and Android.
-- CLI Management: Integrated `omnishell` CLI for runtime credential changes and monitoring without process restarts.
+- CLI Management: Integrated `omnishell` CLI for runtime credential changes and log streaming without process restarts.
 
 ---
 
@@ -68,13 +69,31 @@ OmniShell includes a global CLI utility linked to `/usr/local/bin/omnishell`.
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
+| `omnishell apps` | Displays real-time status, cluster counts, and memory for all apps & services | `omnishell apps` |
+| `omnishell logs [app] [n]` | Streams live logs for any PM2 app, systemd service, or log file | `omnishell logs api` |
+| `omnishell logs` | Streams multi-colored real-time logs for all PM2 applications combined | `omnishell logs` |
 | `omnishell password <pass>` | Updates admin password with fresh salt and scrypt hash | `omnishell password SecretPass@2026` |
 | `omnishell user <username>` | Updates administrator login username | `omnishell user devops-lead` |
 | `omnishell title "<title>"` | Updates browser tab label and login page heading | `omnishell title "Core Production Node"` |
 | `omnishell status` | Displays service health, ports, memory usage, and URL | `omnishell status` |
-| `omnishell restart` | Restarts gateway and ttyd terminal daemon | `omnishell restart` |
-| `omnishell logs` | Tails live connection and authentication logs | `omnishell logs` |
+| `omnishell restart [app]` | Restarts OmniShell or any target PM2 application | `omnishell restart api` |
 | `omnishell help` | Displays available commands | `omnishell help` |
+
+### Log Streaming Examples
+
+```bash
+# Stream logs for an app matching "api"
+omnishell logs api
+
+# Stream logs for Redis service
+omnishell logs redis
+
+# Stream logs for Nginx
+omnishell logs nginx
+
+# Stream last 100 lines and follow live
+omnishell logs api 100
+```
 
 ---
 
