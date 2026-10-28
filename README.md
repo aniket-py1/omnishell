@@ -54,12 +54,14 @@ curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.s
 OmniShell embeds a permanent, non-intrusive live telemetry bar at the top of the terminal session inside your browser. It updates every 1,500 milliseconds via an asynchronous `/api/stats` endpoint without interrupting active terminal keystrokes:
 
 - **Host Telemetry**: System hostname, Linux distribution, and kernel version.
-- **Live CPU Usage**: Instantaneous CPU load average across all physical and virtual cores.
+- **Instantaneous CPU Sampling**: Real-time CPU percentage calculated via 1-second tick deltas (user, system, idle) accompanied by Unix load averages and core counts.
 - **Live Memory (RAM)**: Real-time RAM consumption with a visual dynamic threshold progress bar (Green < 70%, Yellow > 70%, Red > 85%).
 - **Live Storage (Disk)**: Root filesystem capacity, used space, and utilization percentage.
 - **Server Uptime**: Days, hours, and minutes since last reboot.
 - **Active Fleet**: Live count of online PM2 cluster instances and background services across all system users (`root`, `ubuntu`).
-- **Quick Action Bar**: Dedicated buttons to trigger instant app status, view logs, or sign out.
+- **Interactive Apps Drawer**: Dropdown modal displaying complete PM2 cluster instance counts, memory usage, CPU %, and systemd service health.
+- **Interactive Logs Drawer**: Dropdown modal providing 1-click selectors to copy or stream live logs for any application (`omnishell logs [app]`).
+- **Inactivity Session Guard**: 15-minute sliding idle timeout that displays a 60-second visual countdown warning and automatically invalidates the session and severs the WebSocket if inactive.
 
 ---
 
