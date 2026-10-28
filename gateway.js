@@ -3,6 +3,8 @@ const net = require('net');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { execSync } = require('child_process');
 
 const CONFIG_PATHS = [
   '/etc/omnishell/config.json',
@@ -35,7 +37,6 @@ function loadConfig() {
 
 let config = loadConfig();
 
-// Watch config file for changes to apply updates without process restart
 for (const p of CONFIG_PATHS) {
   if (fs.existsSync(p)) {
     fs.watchFile(p, { interval: 2000 }, () => {
@@ -121,6 +122,51 @@ function getCookie(req, name) {
 
 function getClientIp(req) {
   return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+}
+
+// System Telemetry Helper
+function getSystemStats() {
+  const cpus = os.cpus();
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  const uptimeSec = os.uptime();
+
+  const d = Math.floor(uptimeSec / 86400);
+  const h = Math.floor((uptimeSec % 86400) / 3600);
+  const m = Math.floor((uptimeSec % 3600) / 60);
+  const uptimeStr = (d > 0 ? `${d}d ` : '') + `${h}h ${m}m`;
+
+  const ramUsedGb = (usedMem / 1024 / 1024 / 1024).toFixed(1);
+  const ramTotalGb = (totalMem / 1024 / 1024 / 1024).toFixed(1);
+  const ramPercent = Math.round((usedMem / totalMem) * 100);
+
+  const load = os.loadavg()[0].toFixed(2);
+
+  let diskUsage = 'N/A';
+  try {
+    const df = execSync("df -h / | tail -n 1 | awk '{print $5}'", { encoding: 'utf8' }).trim();
+    if (df) diskUsage = df;
+  } catch (e) {}
+
+  let pm2Online = 0;
+  try {
+    const pm2Raw = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' });
+    const list = JSON.parse(pm2Raw);
+    pm2Online = list.filter(p => p.pm2_env && p.pm2_env.status === 'online').length;
+  } catch (e) {}
+
+  return {
+    hostname: os.hostname(),
+    platform: `${os.type()} ${os.release()}`,
+    cpuLoad: load,
+    vCPUs: cpus.length,
+    ramUsed: `${ramUsedGb} / ${ramTotalGb} GB`,
+    ramPercent,
+    diskUsage,
+    uptime: uptimeStr,
+    pm2Online
+  };
 }
 
 function renderLoginHtml(error = '') {
@@ -268,11 +314,247 @@ function renderLoginHtml(error = '') {
 </html>`;
 }
 
+// Master Dashboard with Real-Time HUD Bar & Embedded Terminal
+function renderDashboardHtml() {
+  const title = config.title || 'OmniShell Terminal';
+  const domain = config.domain || 'localhost';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0d1117;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #c9d1d9;
+    }
+    #hud-bar {
+      height: 42px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      user-select: none;
+      z-index: 100;
+      position: relative;
+    }
+    .hud-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hud-brand {
+      font-weight: 700;
+      color: #f0f6fc;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hud-pulse {
+      width: 8px;
+      height: 8px;
+      background: #238636;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #238636;
+    }
+    .hud-host {
+      color: #8b949e;
+      font-family: monospace;
+      background: #21262d;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid #30363d;
+    }
+    .hud-center {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .stat-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stat-label {
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    .stat-val {
+      color: #f0f6fc;
+      font-family: monospace;
+      font-weight: 600;
+    }
+    .bar-wrap {
+      width: 44px;
+      height: 6px;
+      background: #21262d;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid #30363d;
+    }
+    .bar-fill {
+      height: 100%;
+      background: #238636;
+      transition: width 0.4s ease, background 0.4s ease;
+    }
+    .hud-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      padding: 4px 10px;
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn:hover {
+      background: #30363d;
+      color: #f0f6fc;
+    }
+    .btn-danger:hover {
+      background: #b62324;
+      border-color: #b62324;
+      color: #fff;
+    }
+    #term-frame {
+      width: 100%;
+      height: calc(100% - 42px);
+      border: none;
+      display: block;
+      background: #0d1117;
+    }
+    @media (max-width: 900px) {
+      .hud-center { gap: 10px; }
+      .stat-badge:nth-child(n+4) { display: none; }
+    }
+    @media (max-width: 640px) {
+      .hud-center { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="hud-bar">
+    <div class="hud-left">
+      <div class="hud-brand">
+        <div class="hud-pulse"></div>
+        <span>OmniShell</span>
+      </div>
+      <span class="hud-host" id="hud-hostname">Loading...</span>
+    </div>
+
+    <div class="hud-center">
+      <div class="stat-badge">
+        <span class="stat-label">CPU:</span>
+        <span class="stat-val" id="hud-cpu">--</span>
+      </div>
+
+      <div class="stat-badge">
+        <span class="stat-label">RAM:</span>
+        <div class="bar-wrap">
+          <div class="bar-fill" id="hud-ram-bar" style="width: 0%;"></div>
+        </div>
+        <span class="stat-val" id="hud-ram">--</span>
+      </div>
+
+      <div class="stat-badge">
+        <span class="stat-label">Disk:</span>
+        <span class="stat-val" id="hud-disk">--</span>
+      </div>
+
+      <div class="stat-badge">
+        <span class="stat-label">Uptime:</span>
+        <span class="stat-val" id="hud-uptime">--</span>
+      </div>
+
+      <div class="stat-badge">
+        <span class="stat-label">Apps:</span>
+        <span class="stat-val" id="hud-apps" style="color: #38bdf8;">--</span>
+      </div>
+    </div>
+
+    <div class="hud-right">
+      <button class="btn" onclick="sendCommand('omnishell apps')">Apps</button>
+      <button class="btn" onclick="sendCommand('omnishell logs')">Logs</button>
+      <a href="/logout" class="btn btn-danger">Logout</a>
+    </div>
+  </div>
+
+  <iframe id="term-frame" src="/?bare=1"></iframe>
+
+  <script>
+    async function updateStats() {
+      try {
+        const res = await fetch('/api/stats');
+        if (!res.ok) return;
+        const d = await res.json();
+        
+        document.getElementById('hud-hostname').textContent = d.hostname;
+        document.getElementById('hud-cpu').textContent = d.cpuLoad + ' (' + d.vCPUs + 'c)';
+        document.getElementById('hud-ram').textContent = d.ramPercent + '%';
+        
+        const ramBar = document.getElementById('hud-ram-bar');
+        ramBar.style.width = d.ramPercent + '%';
+        if (d.ramPercent > 85) ramBar.style.background = '#f85149';
+        else if (d.ramPercent > 70) ramBar.style.background = '#d29922';
+        else ramBar.style.background = '#238636';
+
+        document.getElementById('hud-disk').textContent = d.diskUsage;
+        document.getElementById('hud-uptime').textContent = d.uptime;
+        document.getElementById('hud-apps').textContent = d.pm2Online + ' Online';
+      } catch (e) {}
+    }
+
+    function sendCommand(cmd) {
+      const frame = document.getElementById('term-frame');
+      frame.focus();
+    }
+
+    updateStats();
+    setInterval(updateStats, 2000);
+  </script>
+</body>
+</html>`;
+}
+
 const server = http.createServer((req, res) => {
   const ip = getClientIp(req);
   const token = getCookie(req, 'omnishell_auth');
   const isAuth = verifySession(token);
 
+  // Endpoint: Real-time Telemetry API
+  if (req.url === '/api/stats') {
+    if (!isAuth) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Unauthorized' }));
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    });
+    return res.end(JSON.stringify(getSystemStats()));
+  }
+
+  // Endpoint: Login GET
   if (req.url === '/login' && req.method === 'GET') {
     if (isAuth) {
       res.writeHead(302, { Location: '/' });
@@ -282,6 +564,7 @@ const server = http.createServer((req, res) => {
     return res.end(renderLoginHtml());
   }
 
+  // Endpoint: Login POST
   if (req.url === '/login' && req.method === 'POST') {
     if (isIpLocked(ip)) {
       res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -316,6 +599,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Endpoint: Logout
   if (req.url === '/logout') {
     res.writeHead(302, {
       'Set-Cookie': 'omnishell_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
@@ -324,17 +608,25 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
+  // Authentication Guard
   if (!isAuth) {
     res.writeHead(302, { Location: '/login' });
     return res.end();
   }
 
-  // Proxy HTTP request to ttyd socket
+  // Main Dashboard View (Serves Real-Time HUD Bar + Embedded Terminal)
+  if ((req.url === '/' || req.url === '/index.html') && !req.url.includes('bare=1')) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(renderDashboardHtml());
+  }
+
+  // Proxy directly to ttyd socket for bare terminal assets and raw requests
   const ttydPort = config.ttydPort || 7680;
+  const targetPath = req.url.replace(/\?bare=1/, '').replace(/&bare=1/, '');
   const options = {
     hostname: '127.0.0.1',
     port: ttydPort,
-    path: req.url,
+    path: targetPath || '/',
     method: req.method,
     headers: { ...req.headers, host: `127.0.0.1:${ttydPort}` }
   };

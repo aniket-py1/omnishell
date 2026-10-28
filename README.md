@@ -8,64 +8,109 @@
 [![Memory: < 20MB](https://img.shields.io/badge/RAM-~18%20MB-success.svg)](https://github.com/aniket-py1/omnishell)
 
 A lightweight, zero-dependency web terminal gateway for Linux servers.
-Provides secure, encrypted browser-based terminal access via HTTPS and WebSockets with dynamic authentication, salted password hashing, brute-force protection, and universal CLI management.
+Provides secure, encrypted browser-based terminal access via HTTPS and WebSockets with real-time server telemetry HUD, salted scrypt authentication, brute-force protection, dynamic application fleet monitoring, and universal log streaming.
 
 Designed and developed by **Aniket Mahida**.
 
 ---
 
-## Technical Overview
+## 1-Click Automated Installation
 
-OmniShell couples the high-performance C binary `ttyd` (libwebsockets + xterm.js) with a lightweight Node.js authentication gateway and Nginx reverse proxy. It provides direct shell access from any browser (desktop, tablet, or smartphone) while consuming less than 20 MB RAM and zero idle CPU.
-
-### Core Features
-
-- High Performance: Native C pseudo-terminal emulation with xterm.js frontend.
-- Zero Control Panel Bloat: Operates cleanly on native systemd, PM2, and Nginx without heavy web panels.
-- Universal Application Auto-Discovery: Dynamically discovers, monitors, and streams live logs for any running PM2 app or systemd service without hardcoding.
-- Enterprise Security:
-  - TLS 1.3 encryption on standard HTTPS port 443 via Let's Encrypt.
-  - Salted password hashing utilizing Node.js native `scrypt` algorithm.
-  - Brute-force rate limiting: 5 consecutive failed attempts trigger an automatic 15-minute IP lockout.
-  - Signed HMAC session tokens with configurable TTL.
-  - Internal terminal socket bound strictly to `127.0.0.1` (no exposed high ports).
-- Session Persistence: Nginx proxy timeouts configured to 86,400 seconds (24 hours) to prevent disconnection during long-running tasks.
-- Mobile Touch Support: Fully functional on-screen keyboard support for Safari and Chrome on iOS and Android.
-- CLI Management: Integrated `omnishell` CLI for runtime credential changes and log streaming without process restarts.
-
----
-
-## Installation Guide
-
-### Method 1: Single-Command Automated Installer (Recommended)
-
-Run the following command on any Ubuntu (20.04/22.04/24.04) or Debian (11/12) server:
+Run this single command on any Ubuntu (20.04 / 22.04 / 24.04 LTS) or Debian (11 / 12) server:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.sh | sudo bash -s -- --domain panel.example.com --user admin --pass YourSecurePassword123
 ```
 
-### Method 2: Interactive Wizard
+### What the 1-Click Installer Executes Automatically:
+1. Detects OS and installs prerequisites (`ttyd`, `nginx`, `certbot`, `python3-certbot-nginx`, `nodejs`, `pm2`).
+2. Generates salted `scrypt` credentials in `/etc/omnishell/config.json`.
+3. Configures the internal `ttyd` pseudo-terminal daemon (loopback on port 7680).
+4. Launches the OmniShell security gateway and telemetry daemon under PM2.
+5. Configures Nginx reverse proxy with WebSocket support and 24-hour keep-alive.
+6. Automatically requests and binds a Let's Encrypt SSL certificate for your domain.
+7. Installs the global management command `omnishell` to `/usr/local/bin/omnishell`.
 
-If you run the script without arguments, the interactive setup wizard will guide you through domain, username, and password selection:
+### Interactive Installation (Wizard Mode)
+If you omit the flags, the installer automatically starts an interactive wizard:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aniket-py1/omnishell/main/install.sh | sudo bash
 ```
 
-### Method 3: Manual Clone Installation
+---
+
+## Real-Time Server Telemetry HUD
+
+OmniShell embeds a permanent, non-intrusive live telemetry bar at the top of the terminal session inside your browser. It updates every 2,000 milliseconds via an asynchronous `/api/stats` endpoint:
+
+- **Host Telemetry**: System hostname, Linux distribution, and kernel version.
+- **Live CPU Usage**: Instantaneous CPU load percentage across all physical and virtual cores.
+- **Live Memory (RAM)**: Real-time RAM consumption with a visual dynamic threshold progress bar (Green < 70%, Yellow > 70%, Red > 85%).
+- **Live Storage (Disk)**: Root filesystem capacity and utilization percentage.
+- **Server Uptime**: Days, hours, and minutes since last reboot.
+- **Active Fleet**: Live count of online PM2 cluster instances and background services.
+- **Quick Action Bar**: Dedicated buttons to trigger instant app status, view logs, or sign out.
+
+---
+
+## Application Fleet Monitoring & Universal Log Streaming
+
+OmniShell includes built-in dynamic service discovery. You can inspect all running applications and stream their live logs directly from the terminal without remembering process IDs or file paths.
+
+### 1. View Running Application Fleet (`omnishell apps`)
+Run `omnishell apps` to get an instant real-time status of all Node.js/Python/Go PM2 clusters and system services:
 
 ```bash
-git clone https://github.com/aniket-py1/omnishell.git
-cd omnishell
-sudo bash install.sh --domain panel.example.com --user admin --pass YourSecurePassword123
+omnishell apps
+```
+
+Example Output:
+```
+======================================================
+  OmniShell Application Fleet Status
+======================================================
+  PM2 Applications:
+    [ONLINE]  lgbs-api             : 14 cluster instances   (RAM: 1840 MB, CPU: 0.3%)
+    [ONLINE]  tronpay-api          : 8 cluster instances    (RAM: 980 MB, CPU: 0.1%)
+    [ONLINE]  lgbs-webhook         : fork                   (RAM: 55 MB, CPU: 0%)
+    [ONLINE]  omnishell            : fork                   (RAM: 32 MB, CPU: 0%)
+------------------------------------------------------
+  System Services:
+    [ACTIVE]  nginx                : systemd service
+    [ACTIVE]  redis-server         : systemd service
+    [ACTIVE]  ttyd                 : systemd service
+======================================================
+```
+
+### 2. Stream Live Application Logs (`omnishell logs [app]`)
+OmniShell dynamically discovers and streams logs using smart matching:
+
+```bash
+# Stream live logs for any PM2 app matching "api"
+omnishell logs api
+
+# Stream live logs for a specific application
+omnishell logs lgbs
+omnishell logs tronpay
+omnishell logs webhook
+
+# Stream systemd journal for infrastructure services
+omnishell logs redis
+omnishell logs nginx
+
+# Stream all applications simultaneously in real-time
+omnishell logs all
+
+# Specify custom history line count (default: 50 lines)
+omnishell logs api 100
 ```
 
 ---
 
 ## CLI Management Reference
 
-OmniShell includes a global CLI utility linked to `/usr/local/bin/omnishell`.
+The `omnishell` CLI is linked globally to `/usr/local/bin/omnishell`:
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
@@ -78,22 +123,6 @@ OmniShell includes a global CLI utility linked to `/usr/local/bin/omnishell`.
 | `omnishell status` | Displays service health, ports, memory usage, and URL | `omnishell status` |
 | `omnishell restart [app]` | Restarts OmniShell or any target PM2 application | `omnishell restart api` |
 | `omnishell help` | Displays available commands | `omnishell help` |
-
-### Log Streaming Examples
-
-```bash
-# Stream logs for an app matching "api"
-omnishell logs api
-
-# Stream logs for Redis service
-omnishell logs redis
-
-# Stream logs for Nginx
-omnishell logs nginx
-
-# Stream last 100 lines and follow live
-omnishell logs api 100
-```
 
 ---
 
@@ -112,6 +141,7 @@ omnishell logs api 100
             |  HTTP / WS (127.0.0.1:7681)
             v
 [ OmniShell Gateway (Node.js Daemon) ]
+   - Real-Time Telemetry Engine (/api/stats)
    - Salted Scrypt Authentication
    - Brute-Force IP Guard (5 attempts / 15 min lock)
    - Dynamic Branding (/etc/omnishell/config.json)
@@ -127,26 +157,13 @@ omnishell logs api 100
 
 ---
 
-## Configuration File
+## Security Specifications
 
-The gateway reads its configuration from `/etc/omnishell/config.json`:
-
-```json
-{
-  "domain": "panel.example.com",
-  "title": "OmniShell Terminal",
-  "badge": "SECURE BASTION",
-  "username": "admin",
-  "passwordHash": "c20df44b419b4b0451cf4550cf6bbdb7...",
-  "salt": "a4d3e2f1...",
-  "shellUser": "ubuntu",
-  "gatewayPort": 7681,
-  "ttydPort": 7680,
-  "sessionDays": 7
-}
-```
-
-The gateway dynamically watches this file and reloads updates automatically without interrupting active WebSocket sessions.
+- Zero Control Panel Footprint: Eliminates bloated web management panels (such as aaPanel or Webmin).
+- Password Security: Evaluates passwords using `crypto.scryptSync` with 16-byte cryptographically secure salts.
+- Rate Limiting: Blocks IP addresses for 15 minutes after 5 consecutive failed login attempts.
+- Session Security: HMAC SHA-256 signed session cookies with configurable expiration.
+- Network Isolation: Terminal daemon binds strictly to loopback interface `127.0.0.1`.
 
 ---
 
@@ -155,7 +172,7 @@ The gateway dynamically watches this file and reloads updates automatically with
 When proxying OmniShell through Cloudflare:
 1. Ensure your DNS record (e.g. `panel`) is set to Proxied (Orange Cloud) or DNS-Only (Grey Cloud).
 2. Set Cloudflare SSL/TLS encryption mode to **Full** or **Full (strict)**.
-3. In Cloudflare Dashboard, ensure **WebSockets** is toggled **ON** under Network settings.
+3. In Cloudflare Dashboard, verify **WebSockets** is toggled **ON** under Network settings.
 
 ---
 
