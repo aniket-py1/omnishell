@@ -28,33 +28,69 @@ function hashPassword(password, salt) {
 function getAllPm2Apps() {
   const allApps = [];
   const seenKeys = new Set();
-  const pm2Homes = ['/root/.pm2'];
+  const isRoot = !process.getuid || process.getuid() === 0;
+
+  // 1. Current user's PM2 apps
   try {
-    if (fs.existsSync('/home')) {
-      const users = fs.readdirSync('/home');
-      for (const u of users) {
-        const p = `/home/${u}/.pm2`;
-        if (fs.existsSync(p)) pm2Homes.push(p);
+    const raw = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' }).trim();
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      const list = JSON.parse(raw);
+      for (const app of list) {
+        const key = `${app.name}:${app.pm_id}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          app.__asSudo = false;
+          allApps.push(app);
+        }
       }
     }
   } catch (e) {}
 
-  for (const home of pm2Homes) {
+  // 2. If running as non-root user, query root's PM2 apps via sudo -n
+  if (!isRoot) {
     try {
-      const raw = execSync(`PM2_HOME="${home}" pm2 jlist 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const raw = execSync('sudo -n pm2 jlist 2>/dev/null', { encoding: 'utf8' }).trim();
       if (raw.startsWith('[') && raw.endsWith(']')) {
         const list = JSON.parse(raw);
         for (const app of list) {
           const key = `${app.name}:${app.pm_id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
-            app.__pm2Home = home;
+            app.__asSudo = true;
             allApps.push(app);
           }
         }
       }
     } catch (e) {}
+  } else {
+    // 3. If running as root, scan /home/*/.pm2
+    try {
+      if (fs.existsSync('/home')) {
+        const users = fs.readdirSync('/home');
+        for (const u of users) {
+          const home = `/home/${u}/.pm2`;
+          if (fs.existsSync(home)) {
+            try {
+              const raw = execSync(`PM2_HOME="${home}" pm2 jlist 2>/dev/null`, { encoding: 'utf8' }).trim();
+              if (raw.startsWith('[') && raw.endsWith(']')) {
+                const list = JSON.parse(raw);
+                for (const app of list) {
+                  const key = `${app.name}:${app.pm_id}`;
+                  if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    app.__pm2Home = home;
+                    app.__asSudo = false;
+                    allApps.push(app);
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
   }
+
   return allApps;
 }
 
@@ -189,6 +225,11 @@ switch (command) {
     if (matchedPm2Name) {
       console.log(`[+] Found PM2 application: "${matchedPm2Name}". Streaming live logs...`);
       const matchedApp = pm2List.find(a => a.name === matchedPm2Name);
+      if (matchedApp && matchedApp.__asSudo) {
+        const child = spawn('sudo', ['pm2', 'logs', matchedPm2Name, '--lines', lines.toString()], { stdio: 'inherit' });
+        child.on('exit', code => process.exit(code || 0));
+        break;
+      }
       const spawnEnv = { ...process.env };
       if (matchedApp && matchedApp.__pm2Home) {
         spawnEnv.PM2_HOME = matchedApp.__pm2Home;
@@ -281,11 +322,12 @@ switch (command) {
     console.log(`  Shell User   : ${cfg.shellUser || 'ubuntu'}`);
     console.log('------------------------------------------------------');
     try {
-      const pm2Status = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8' });
-      const list = JSON.parse(pm2Status);
-      const app = list.find(p => p.name === 'omnishell' || p.name === 'terminal-gateway');
+      const pm2List = getAllPm2Apps();
+      const app = pm2List.find(p => p.name === 'omnishell' || p.name === 'terminal-gateway');
       if (app) {
         console.log(`  PM2 Process  : ${app.name} [Status: ${app.pm2_env.status}] (PID: ${app.pid}, Memory: ${Math.round(app.monit.memory / 1024 / 1024)} MB)`);
+      } else {
+        console.log('  PM2 Process  : omnishell [Not detected]');
       }
     } catch (e) {
       console.log('  PM2 Status   : Not available');
@@ -302,17 +344,21 @@ switch (command) {
     const target = args[1];
     if (target && target !== 'omnishell') {
       console.log(`[+] Restarting application: "${target}"...`);
-      try {
-        execSync(`pm2 restart "${target}"`, { stdio: 'inherit' });
-      } catch (e) {
-        console.error(`Failed to restart PM2 app "${target}".`);
+      const pm2List = getAllPm2Apps();
+      const matchedApp = pm2List.find(a => a.name.toLowerCase().includes(target.toLowerCase()));
+      if (matchedApp && matchedApp.__asSudo) {
+        execSync(`sudo -n pm2 restart "${matchedApp.name}"`, { stdio: 'inherit' });
+      } else {
+        const envPrefix = (matchedApp && matchedApp.__pm2Home) ? `PM2_HOME="${matchedApp.__pm2Home}" ` : '';
+        execSync(`${envPrefix}pm2 restart "${target}"`, { stdio: 'inherit' });
       }
+      console.log(`[Success] Application "${target}" restarted.`);
       break;
     }
     console.log('[+] Restarting ttyd daemon...');
-    try { execSync('systemctl restart ttyd'); } catch (e) {}
+    try { execSync('sudo -n systemctl restart ttyd 2>/dev/null || systemctl restart ttyd'); } catch (e) {}
     console.log('[+] Restarting OmniShell gateway...');
-    try { execSync('pm2 restart omnishell || pm2 restart terminal-gateway'); } catch (e) {}
+    try { execSync('sudo -n pm2 restart omnishell 2>/dev/null || pm2 restart omnishell || pm2 restart terminal-gateway'); } catch (e) {}
     console.log('[Success] OmniShell restarted successfully.');
     break;
   }

@@ -333,8 +333,24 @@ function getSystemStats() {
 }
 
 // -----------------------------------------------------------------------------
-// HTML Templates
+// Official OmniShell Logo & Favicon SVG
 // -----------------------------------------------------------------------------
+
+const OMNISHELL_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" style="width: 100%; height: 100%; display: block;">
+  <defs>
+    <linearGradient id="omniGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#omniGrad)"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="15.5" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="1"/>
+  <path d="M18 21L30 32L18 43" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="34" y1="43" x2="46" y2="43" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
+</svg>`;
+
+const FAVICON_DATA_URI = "data:image/svg+xml," + encodeURIComponent(OMNISHELL_LOGO_SVG);
 
 function renderLoginHtml(error = '', notice = '') {
   const title = config.title || 'OmniShell Terminal';
@@ -347,6 +363,7 @@ function renderLoginHtml(error = '', notice = '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
+  <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -371,6 +388,12 @@ function renderLoginHtml(error = '', notice = '') {
     .header {
       text-align: center;
       margin-bottom: 28px;
+    }
+    .logo-wrap {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 16px auto;
+      filter: drop-shadow(0 4px 14px rgba(2, 132, 199, 0.45));
     }
     .badge {
       display: inline-block;
@@ -467,6 +490,7 @@ function renderLoginHtml(error = '', notice = '') {
 <body>
   <div class="card">
     <div class="header">
+      <div class="logo-wrap">${OMNISHELL_LOGO_SVG}</div>
       <div class="badge">${badge}</div>
       <h1>${title}</h1>
       <p>Authorized personnel authentication required</p>
@@ -503,6 +527,7 @@ function renderDashboardHtml() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
+  <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -806,7 +831,9 @@ function renderDashboardHtml() {
   <div id="hud-bar">
     <div class="hud-left">
       <div class="hud-brand">
-        <div class="hud-pulse"></div>
+        <div style="width: 20px; height: 20px; display: flex; align-items: center; margin-right: 2px;">
+          ${OMNISHELL_LOGO_SVG}
+        </div>
         <span>OmniShell</span>
       </div>
       <span class="hud-host" id="hud-hostname">Loading...</span>
@@ -1203,6 +1230,15 @@ const server = http.createServer((req, res) => {
   const ip = getClientIp(req);
   const token = getCookie(req, 'omnishell_auth');
   const isAuth = verifySession(token);
+
+  // Endpoint: Favicon (Public SVG / ICO)
+  if (req.url === '/favicon.ico' || req.url === '/favicon.svg') {
+    res.writeHead(200, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=86400'
+    });
+    return res.end(OMNISHELL_LOGO_SVG);
+  }
 
   // Endpoint: Heartbeat to refresh sliding activity timer
   if (req.url === '/api/heartbeat' && req.method === 'POST') {
