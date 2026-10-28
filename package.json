@@ -1,0 +1,23 @@
+{
+  "name": "omnishell",
+  "version": "1.0.0",
+  "description": "Universal, secure web terminal gateway for Linux servers",
+  "main": "gateway.js",
+  "bin": {
+    "omnishell": "./bin/omnishell.js"
+  },
+  "scripts": {
+    "start": "node gateway.js"
+  },
+  "author": "Aniket Mahida",
+  "license": "MIT",
+  "keywords": [
+    "web-terminal",
+    "ttyd",
+    "nginx",
+    "cloudshell",
+    "bastion",
+    "linux-terminal",
+    "devops"
+  ]
+}
